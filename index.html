@@ -745,7 +745,7 @@ function sortPinsByCameraDistance(ids){
     });
     document.getElementById('btnRikei').addEventListener('click', ()=>{
       markUserInteraction();
-      showPinsByIds(RIKEI_IDS);
+showPinsByIds(sortPinsByCameraDistance(RIKEI_IDS));
     });
     document.getElementById('btnCollect').addEventListener('click', ()=>{
       markUserInteraction();
@@ -985,5 +985,6 @@ function sortPinsByCameraDistance(ids){
 </html>
 
   
+
 
 
