@@ -479,7 +479,7 @@
     if (a.kind === 'drop' && t > 0.78){
       const u = (t - 0.78) / 0.22;     // 0..1
       const damp = Math.exp(-8 * u);   // 減衰
-      const amp = 1.2;                 // 刺さり量（好みで 0.6〜2.0）
+      const amp = 2.0;                 // 刺さり量（好みで 0.6〜2.0）
       const wobble = Math.sin(u * Math.PI * 5); // 回数（好みで 3〜7）
       y += (-amp) * wobble * damp;
     }
