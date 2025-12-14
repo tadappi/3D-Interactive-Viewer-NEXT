@@ -29,7 +29,7 @@
       box-shadow: 0 10px 30px rgba(0,0,0,0.6);
       overflow: hidden;
       display: none;
-      z-index: 10; /* GUIより前に出す */
+      z-index: 10;
     }
     #overlay.visible { display: block; }
     #overlay-header {
@@ -85,7 +85,7 @@
       position: fixed;
       top: 14px;
       left: 14px;
-      z-index: 20; /* titleやGUIより前 */
+      z-index: 20;
       display: flex;
       gap: 8px;
     }
@@ -104,7 +104,7 @@
     .mBtn:hover{ background: rgba(0,0,0,.68); }
     .mBtn:active{ transform: translateY(1px); }
     .mBtn.secondary{
-      width: 120px; /* 回収だけ少し短く */
+      width: 120px;
       font-weight: 700;
     }
   </style>
@@ -305,7 +305,7 @@
   window.addEventListener('keydown', markUserInteraction);
 
   let root = null;
-  const clickableObjects = []; // ピン（リンクあり/なし）
+  const clickableObjects = [];
   let hoverObject = null;
 
   // ========================= テクスチャキャッシュ =========================
@@ -356,7 +356,7 @@
     if (!texLabel) return null;
     const matLabel = new THREE.SpriteMaterial({ map: texLabel, transparent: true, depthTest: true });
     const label = new THREE.Sprite(matLabel);
-    label.scale.set(heightWorld, heightWorld, 1); // 仮
+    label.scale.set(heightWorld, heightWorld, 1);
     label.position.set(...offset);
     label.visible = true;
     label.userData = { fitByImage: true, targetH: heightWorld };
@@ -427,62 +427,75 @@
   }
 
   // ========================= 「降って刺さる」ピン制御 =========================
-  const allPins = [];            // 表示/回収対象（共通ピン12 + 必要ならスピンも）
+  const allPins = [];
   const pinById = new Map();
 
-  const DROP_FROM_Y = 80;        // ここが「上から降ってくる高さ」
-  const DROP_MS = 850;           // 落下時間
-  const COLLECT_MS = 650;        // 回収時間
+  const DROP_FROM_Y = 80;
+  const DROP_MS = 850;
+  const COLLECT_MS = 650;
 
   function registerPin(pin){
     allPins.push(pin);
     pinById.set(pin.userData.id, pin);
 
-    // 元の位置（刺さる場所）
     const home = pin.position.clone();
-
-    // 回収位置（上）
     const raised = home.clone();
     raised.y += DROP_FROM_Y;
 
     pin.userData._homePos = home;
     pin.userData._raisedPos = raised;
 
-    // 最初は「回収状態」
+    // 最初は回収状態
     pin.position.copy(raised);
     pin.visible = false;
     if (pin.userData.label) pin.userData.label.visible = false;
 
-    pin.userData._anim = null; // {from,to,t0,dur}
+    pin.userData._anim = null; // {from,to,t0,dur,kind}
   }
 
- function animatePinTo(pin, toVec3, ms, kind='move'){
-  const from = pin.position.clone();
-  pin.userData._anim = { from, to: toVec3.clone(), t0: performance.now(), dur: ms, kind };
-  pin.visible = true;
-  if (pin.userData.label) pin.userData.label.visible = true;
-}
+  function animatePinTo(pin, toVec3, ms, kind='move'){
+    const from = pin.position.clone();
+    pin.userData._anim = { from, to: toVec3.clone(), t0: performance.now(), dur: ms, kind };
+    pin.visible = true;
+    if (pin.userData.label) pin.userData.label.visible = true;
+  }
 
-  
   function updatePinAnim(pin, now){
     const a = pin.userData._anim;
     if (!a) return;
 
     const t = Math.min(1, (now - a.t0) / a.dur);
-    // ちょい気持ちいい落ち方（最後だけキュッ）
+
+    // 基本は気持ちいい easeOut
     const easeOut = (x)=> 1 - Math.pow(1-x, 3);
     const k = easeOut(t);
 
-    pin.position.lerpVectors(a.from, a.to, k);
+    // 位置（まずは普通に lerp）
+    const x = THREE.MathUtils.lerp(a.from.x, a.to.x, k);
+    const z = THREE.MathUtils.lerp(a.from.z, a.to.z, k);
+    let   y = THREE.MathUtils.lerp(a.from.y, a.to.y, k);
+
+    // ===== 「drop」だけ、最後に“刺さりバウンス” =====
+    if (a.kind === 'drop' && t > 0.78){
+      const u = (t - 0.78) / 0.22;     // 0..1
+      const damp = Math.exp(-8 * u);   // 減衰
+      const amp = 1.2;                 // 刺さり量（好みで 0.6〜2.0）
+      const wobble = Math.sin(u * Math.PI * 5); // 回数（好みで 3〜7）
+      y += (-amp) * wobble * damp;
+    }
+
+    pin.position.set(x, y, z);
 
     if (t >= 1){
       pin.userData._anim = null;
 
-      // もし回収位置に着いたら見えなくする（クリック判定からも外す）
       const isRaised = pin.position.distanceTo(pin.userData._raisedPos) < 1e-3;
       if (isRaised){
         pin.visible = false;
         if (pin.userData.label) pin.userData.label.visible = false;
+      } else {
+        // drop 最終はピタッ
+        pin.position.copy(pin.userData._homePos);
       }
     }
   }
@@ -490,16 +503,15 @@
   function showPinsByIds(idList){
     const want = new Set(idList);
 
-    // オーバーレイ開いてたら閉じる（回収/切替の時に邪魔なので）
     overlay.classList.remove('visible');
     overlayFrame.src = 'about:blank';
 
     allPins.forEach(pin=>{
       const id = pin.userData.id;
       if (want.has(id)){
-        animatePinTo(pin, pin.userData._homePos, DROP_MS);
+        animatePinTo(pin, pin.userData._homePos, DROP_MS, 'drop');
       } else {
-        animatePinTo(pin, pin.userData._raisedPos, COLLECT_MS);
+        animatePinTo(pin, pin.userData._raisedPos, COLLECT_MS, 'collect');
       }
     });
   }
@@ -508,7 +520,7 @@
     overlay.classList.remove('visible');
     overlayFrame.src = 'about:blank';
     allPins.forEach(pin=>{
-      animatePinTo(pin, pin.userData._raisedPos, COLLECT_MS);
+      animatePinTo(pin, pin.userData._raisedPos, COLLECT_MS, 'collect');
     });
   }
 
@@ -532,12 +544,12 @@
     controls.target.set(0,0,0);
     controls.update();
 
-    // この時のビューを「軌道の基準位置」として保存
+    // 基準軌道保存
     baseOrbitPos.copy(camera.position);
     baseOrbitTarget.copy(controls.target);
     hasBaseOrbit = true;
 
-    // ===== 共通ピン 12個（いまのやつを「定義配列」にした）=====
+    // ===== 共通ピン 12個 =====
     const PIN_DEFS = [
       { id:'p1_event',      pos:[-14, 3, -20], href:'./eventarea.mp4',                      iconBlue:'./pin1blue.png', iconRed:'./pin1red.png', labelPng:'./event.png' },
       { id:'p2_konjiki',    pos:[-37,15, 41],  href:'./konjikido.mp4',                      iconBlue:'./pin1blue.png', iconRed:'./pin1red.png', labelPng:'./konjiki.png' },
@@ -570,7 +582,7 @@
       registerPin(pin);
     });
 
-    // ===== 疑似回転 赤ピン × 3（必要なら「文系/理系」にも混ぜられる）=====
+    // ===== 疑似回転 赤ピン × 3 =====
     const SPIN_PINS = [
       {
         id:'s1_kiyohira3d',
@@ -609,26 +621,19 @@
       clickableObjects.push(sp);
       clickableSpinPins.push(sp);
 
-      // ★スピンも「回収・落下」の対象にするなら登録する
+      // ★スピンも「回収・落下」の対象にしたいなら次の1行を有効化
       // registerPin(sp);
     });
 
-    // ========================= ここが「文系7・理系8」の割り当て =========================
-    // ★重複OK：両方の配列に同じIDを書けばOK
-    //
-    // 使えるID一覧：
-    // p1_event, p2_konjiki, p3_muryou, p4_yoshi, p5_seichoS, p6_machi,
-    // p7_jyosaku, p8_ataka, p9_kiyo, p10_enmei, p11_rest, p12_kyoudo
-    //
-    // （スピンも混ぜたいなら registerPin(sp) をONにして、ここに s1_... を追加）
+    // ========================= 文系7・理系8（重複OK） =========================
     const BUNKEI_IDS = [
       'p1_event','p2_konjiki','p3_muryou','p4_yoshi','p9_kiyo','p11_rest','p12_kyoudo'
-    ]; // ← 7個（例）
+    ];
     const RIKEI_IDS = [
       'p1_event','p5_seichoS','p6_machi','p7_jyosaku','p8_ataka','p9_kiyo','p10_enmei','p12_kyoudo'
-    ]; // ← 8個（例）
+    ];
 
-    // 最初は「共通ピンなし」＝回収状態のまま
+    // 最初は全部回収（＝共通ピン無し）
     collectAllPins();
 
     // ボタン
@@ -693,15 +698,12 @@
   gui.add(params, 'showAxes').name('Show axes').onChange(v=> axes.visible = v);
   gui.close();
 
-  // ========================= クリック（寄ってから小ウィンドウ＆軌道復帰用の軌道保存） =========================
+  // ========================= クリック（寄ってから小ウィンドウ＆軌道保存） =========================
   const _p = new THREE.Vector3(), _box = new THREE.Box3(), _size = new THREE.Vector3();
 
   renderer.domElement.addEventListener('click', (e)=>{
     if (_flying) return;
 
-    // ピンが「回収で非表示」の時は当たらないようにする（クリック判定から除外）
-    // visible=false の Sprite は Raycaster の intersectObjects で当たらない挙動になることが多いが、
-    // 念のため hover/クリック時にチェックする
     const r = renderer.domElement.getBoundingClientRect();
     const x = ((e.clientX - r.left) / r.width) * 2 - 1;
     const y = -((e.clientY - r.top) / r.height) * 2 + 1;
@@ -717,7 +719,6 @@
         ? obj.parent
         : obj;
 
-    // 回収で見えてないピンは無視
     if (hit.visible === false) return;
 
     if (hoverObject && hoverObject.userData.type === 'pin') {
@@ -773,7 +774,7 @@
   const clock = new THREE.Clock();
 
 
-    function tick(){
+  function tick(){
     const dt = clock.getDelta();
     const t  = clock.elapsedTime;
     const now = performance.now();
@@ -785,7 +786,7 @@
     if (hits.length){
       const obj = hits[0].object;
       hit = (obj.userData?.type) ? obj : (obj.parent?.userData?.type) ? obj.parent : obj;
-      if (hit && hit.visible === false) hit = null; // 回収中はホバーしない
+      if (hit && hit.visible === false) hit = null;
     }
 
     if (hoverObject !== hit) {
@@ -881,3 +882,5 @@
 </script>
 </body>
 </html>
+
+  
