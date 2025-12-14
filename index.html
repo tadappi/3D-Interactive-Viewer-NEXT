@@ -18,7 +18,7 @@
 
     /* ===== オーバーレイ小ウィンドウ ===== */
     #overlay {
-      position: fixed;  
+      position: fixed;
       left: 50%;
       top: 50%;
       transform: translate(-50%, -50%);
@@ -31,9 +31,7 @@
       display: none;
       z-index: 10; /* GUIより前に出す */
     }
-    #overlay.visible {
-      display: block;
-    }
+    #overlay.visible { display: block; }
     #overlay-header {
       height: 28px;
       display: flex;
@@ -43,7 +41,7 @@
       background: rgba(20,20,20,0.95);
       color: #eee;
       font: 12px/1 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
-      cursor: move; /* 将来ドラッグ対応したくなったとき用の見た目 */
+      cursor: move;
     }
     #overlay-title {
       white-space: nowrap;
@@ -59,10 +57,7 @@
       font-size: 14px;
       padding: 0 4px;
     }
-    #overlay-close:hover {
-      color: #fff;
-    }
-
+    #overlay-close:hover { color: #fff; }
     #overlay-iframe {
       width: 100%;
       height: calc(100% - 28px);
@@ -81,11 +76,37 @@
     }
     #top-title img{
       display: block;
-      max-width: 90vw;  /* 画面より大きくならないように */
+      max-width: 90vw;
       height: auto;
     }
 
-    
+    /* ===== 左上：文系/理系/回収 ボタン ===== */
+    #modeButtons{
+      position: fixed;
+      top: 14px;
+      left: 14px;
+      z-index: 20; /* titleやGUIより前 */
+      display: flex;
+      gap: 8px;
+    }
+    .mBtn{
+      width: 200px;
+      height: 50px;
+      border-radius: 10px;
+      border: 1px solid rgba(255,255,255,.25);
+      background: rgba(0,0,0,.55);
+      color: #fff;
+      font: 700 16px/1 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+      cursor: pointer;
+      box-shadow: 0 8px 20px rgba(0,0,0,.35);
+      backdrop-filter: blur(6px);
+    }
+    .mBtn:hover{ background: rgba(0,0,0,.68); }
+    .mBtn:active{ transform: translateY(1px); }
+    .mBtn.secondary{
+      width: 120px; /* 回収だけ少し短く */
+      font-weight: 700;
+    }
   </style>
 
   <script type="importmap">
@@ -95,20 +116,27 @@
   </script>
 </head>
 <body>
-<div id="app"></div>
+  <div id="app"></div>
 
-<div id="top-title">
-  <img src="./title.png" alt="藤原の里 3D ビューア">
-</div>
-  
-<!-- 小さめタブ（オーバーレイ） -->
-<div id="overlay">
-  <div id="overlay-header">
-    <div id="overlay-title">Loading…</div>
-    <button id="overlay-close" aria-label="Close">✕</button>
+  <div id="top-title">
+    <img src="./title.png" alt="藤原の里 3D ビューア">
   </div>
-  <iframe id="overlay-iframe" src="about:blank" allowfullscreen></iframe>
-</div>
+
+  <!-- 左上ボタン -->
+  <div id="modeButtons">
+    <button id="btnBunkei" class="mBtn">文系</button>
+    <button id="btnRikei"  class="mBtn">理系</button>
+    <button id="btnCollect" class="mBtn secondary">回収</button>
+  </div>
+
+  <!-- 小さめタブ（オーバーレイ） -->
+  <div id="overlay">
+    <div id="overlay-header">
+      <div id="overlay-title">Loading…</div>
+      <button id="overlay-close" aria-label="Close">✕</button>
+    </div>
+    <iframe id="overlay-iframe" src="about:blank" allowfullscreen></iframe>
+  </div>
 
 <script type="module">
   import * as THREE from 'three';
@@ -118,7 +146,6 @@
 
   // ========================= 基本セットアップ =========================
   const DEFAULT_BG = '#c2c2c2';
-
   const container = document.getElementById('app');
 
   const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -140,7 +167,7 @@
   controls.autoRotateSpeed = 0.5;
   controls.target.set(0, 0, 0);
 
-  // 「軌道」用の基準ビュー（オートローテで回っている円周上の1点）
+  // 「軌道」用の基準ビュー
   const baseOrbitPos = new THREE.Vector3();
   const baseOrbitTarget = new THREE.Vector3();
   let hasBaseOrbit = false;
@@ -160,7 +187,6 @@
     idleReturnArmed = true;
   }
 
-  // OrbitControlsの操作開始/終了でも「操作あり」とみなす
   controls.addEventListener('start', markUserInteraction);
   controls.addEventListener('end', markUserInteraction);
 
@@ -179,7 +205,10 @@
   sun.shadow.camera.bottom = -300;
   scene.add(sun);
 
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(4000, 4000), new THREE.ShadowMaterial({ opacity: 0.25 }));
+  const ground = new THREE.Mesh(
+    new THREE.PlaneGeometry(4000, 4000),
+    new THREE.ShadowMaterial({ opacity: 0.25 })
+  );
   ground.rotation.x = -Math.PI / 2;
   ground.position.y = -0.01;
   ground.receiveShadow = true;
@@ -188,8 +217,8 @@
 
   const axes = new THREE.AxesHelper(100);
   scene.add(axes);
-  axes.visible = false; 
-  
+  axes.visible = false;
+
   // ========================= オーバーレイ要素 =========================
   const overlay       = document.getElementById('overlay');
   const overlayTitle  = document.getElementById('overlay-title');
@@ -199,7 +228,6 @@
   let overlayPrevAutoRotate = controls.autoRotate;
 
   function toEmbedUrl(rawHref){
-    // YouTube のショートURL / 通常URL を埋め込みURLに変換
     try{
       const u = new URL(rawHref);
       const host = u.hostname;
@@ -211,9 +239,7 @@
         const id = u.searchParams.get('v');
         return `https://www.youtube.com/embed/${id}?autoplay=1`;
       }
-    }catch(e){
-      // URL としてパースできなければそのまま返す
-    }
+    }catch(e){}
     return rawHref;
   }
 
@@ -250,21 +276,13 @@
     hasOrbitBeforeFly = false;
 
     if (destPos && destTarget) {
-      flyTo(
-        camera,
-        controls,
-        destPos,
-        destTarget,
-        1800,
-        ()=>{
-          if (overlayPrevAutoRotate){
-            controls.autoRotate = true;
-            params.autoRotate = true;
-          }
+      flyTo(camera, controls, destPos, destTarget, 1800, ()=>{
+        if (overlayPrevAutoRotate){
+          controls.autoRotate = true;
+          params.autoRotate = true;
         }
-      );
+      });
     } else {
-      // 保険：何も保存されていない場合
       if (overlayPrevAutoRotate){
         controls.autoRotate = true;
         params.autoRotate = true;
@@ -282,7 +300,6 @@
     mouseNDC.y = -((e.clientY - r.top) / r.height) * 2 + 1;
   });
 
-  // カメラ操作系のユーザー入力
   renderer.domElement.addEventListener('pointerdown', markUserInteraction);
   renderer.domElement.addEventListener('wheel', markUserInteraction);
   window.addEventListener('keydown', markUserInteraction);
@@ -349,6 +366,7 @@
 
   // 共通ピン
   function createPin({
+    id='pin',
     pos=[0,0,0], href=null, iconBlue, iconRed, labelPng=null,
     scale=3, labelHeight=4, labelOffset=[0,2,0], noColorSwap=false
   }) {
@@ -363,7 +381,15 @@
     pin.position.set(...pos);
     pin.scale.setScalar(scale);
     pin.renderOrder = 10;
-    pin.userData = { href, type:'pin', mats:{blue:matBlue, red:matRed}, label:null, noColorSwap };
+
+    pin.userData = {
+      id,
+      href,
+      type:'pin',
+      mats:{blue:matBlue, red:matRed},
+      label:null,
+      noColorSwap
+    };
 
     if (texLabel) {
       const label = attachLabelSprite(pin, texLabel, labelHeight, labelOffset);
@@ -374,6 +400,7 @@
 
   // 疑似回転ピン
   function createSpinningPin({
+    id='spin',
     pos=[0,0,0], href=null, icon='./pinbrightred.png',
     baseScale=6, spinSpeed=0.8, minFactor=0.06, labelPng=null, labelHeight=5, labelOffset=[0,3.2,0]
   }){
@@ -384,9 +411,12 @@
     sp.scale.set(baseScale, baseScale, 1);
     sp.renderOrder = 11;
     sp.userData = {
-      type:'pin', href,
+      id,
+      type:'pin',
+      href,
       mats:{blue:mat, red:mat},
-      label:null, noColorSwap:true,
+      label:null,
+      noColorSwap:true,
       spin:{ base:baseScale, speed:spinSpeed, phase: Math.random()*Math.PI*2, min:minFactor }
     };
     if (labelPng){
@@ -396,9 +426,95 @@
     return sp;
   }
 
+  // ========================= 「降って刺さる」ピン制御 =========================
+  const allPins = [];            // 表示/回収対象（共通ピン12 + 必要ならスピンも）
+  const pinById = new Map();
+
+  const DROP_FROM_Y = 80;        // ここが「上から降ってくる高さ」
+  const DROP_MS = 850;           // 落下時間
+  const COLLECT_MS = 650;        // 回収時間
+
+  function registerPin(pin){
+    allPins.push(pin);
+    pinById.set(pin.userData.id, pin);
+
+    // 元の位置（刺さる場所）
+    const home = pin.position.clone();
+
+    // 回収位置（上）
+    const raised = home.clone();
+    raised.y += DROP_FROM_Y;
+
+    pin.userData._homePos = home;
+    pin.userData._raisedPos = raised;
+
+    // 最初は「回収状態」
+    pin.position.copy(raised);
+    pin.visible = false;
+    if (pin.userData.label) pin.userData.label.visible = false;
+
+    pin.userData._anim = null; // {from,to,t0,dur}
+  }
+
+  function animatePinTo(pin, toVec3, ms){
+    const from = pin.position.clone();
+    pin.userData._anim = { from, to: toVec3.clone(), t0: performance.now(), dur: ms };
+    pin.visible = true;
+    if (pin.userData.label) pin.userData.label.visible = true;
+  }
+
+  function updatePinAnim(pin, now){
+    const a = pin.userData._anim;
+    if (!a) return;
+
+    const t = Math.min(1, (now - a.t0) / a.dur);
+    // ちょい気持ちいい落ち方（最後だけキュッ）
+    const easeOut = (x)=> 1 - Math.pow(1-x, 3);
+    const k = easeOut(t);
+
+    pin.position.lerpVectors(a.from, a.to, k);
+
+    if (t >= 1){
+      pin.userData._anim = null;
+
+      // もし回収位置に着いたら見えなくする（クリック判定からも外す）
+      const isRaised = pin.position.distanceTo(pin.userData._raisedPos) < 1e-3;
+      if (isRaised){
+        pin.visible = false;
+        if (pin.userData.label) pin.userData.label.visible = false;
+      }
+    }
+  }
+
+  function showPinsByIds(idList){
+    const want = new Set(idList);
+
+    // オーバーレイ開いてたら閉じる（回収/切替の時に邪魔なので）
+    overlay.classList.remove('visible');
+    overlayFrame.src = 'about:blank';
+
+    allPins.forEach(pin=>{
+      const id = pin.userData.id;
+      if (want.has(id)){
+        animatePinTo(pin, pin.userData._homePos, DROP_MS);
+      } else {
+        animatePinTo(pin, pin.userData._raisedPos, COLLECT_MS);
+      }
+    });
+  }
+
+  function collectAllPins(){
+    overlay.classList.remove('visible');
+    overlayFrame.src = 'about:blank';
+    allPins.forEach(pin=>{
+      animatePinTo(pin, pin.userData._raisedPos, COLLECT_MS);
+    });
+  }
+
   // ========================= モデル読込 =========================
   const clickableSpinPins = [];
   const gltfLoader = new GLTFLoader();
+
   gltfLoader.load('./100.glb', (gltf) => {
     root = gltf.scene;
     root.traverse(o => { if (o.isMesh){ o.castShadow = true; o.receiveShadow = false; }});
@@ -420,189 +536,112 @@
     baseOrbitTarget.copy(controls.target);
     hasBaseOrbit = true;
 
-    // ===== 青ピン =====
-    const pin1 = createPin({            //イベント広場
-      pos: [-14, 3, -20],
-      href: './eventarea.mp4',
-      iconBlue: './pin1blue.png',
-      iconRed:  './pin1red.png',
-      labelPng: './event.png',
-      scale: 3,
-      labelHeight: 0.7,
-      labelOffset: [0, 1.0, 0],
+    // ===== 共通ピン 12個（いまのやつを「定義配列」にした）=====
+    const PIN_DEFS = [
+      { id:'p1_event',      pos:[-14, 3, -20], href:'./eventarea.mp4',                      iconBlue:'./pin1blue.png', iconRed:'./pin1red.png', labelPng:'./event.png' },
+      { id:'p2_konjiki',    pos:[-37,15, 41],  href:'./konjikido.mp4',                      iconBlue:'./pin1blue.png', iconRed:'./pin1red.png', labelPng:'./konjiki.png' },
+      { id:'p3_muryou',     pos:[-37, 3, 20],  href:'./muryou.mp4',                         iconBlue:'./pin1blue.png', iconRed:'./pin1red.png', labelPng:'./muryou.png' },
+      { id:'p4_yoshi',      pos:[  0,10, 22],  href:'./yoshitsune.mp4',                     iconBlue:'./pin1blue.png', iconRed:'./pin1red.png', labelPng:'./yositsune.png' },
+      { id:'p5_seichoS',    pos:[-17, 3,  7],  href:'https://tadappi.github.io/FU-seichoS/',iconBlue:'./pin1blue.png', iconRed:'./pin1red.png', labelPng:'./seichoS.png' },
+      { id:'p6_machi',      pos:[-30, 3,  5],  href:'https://tadappi.github.io/FU-machi/',  iconBlue:'./pin1blue.png', iconRed:'./pin1red.png', labelPng:'./machi.png' },
+      { id:'p7_jyosaku',    pos:[-14, 6, 55],  href:'https://tadappi.github.io/FU-jyosaku/',iconBlue:'./pin1blue.png', iconRed:'./pin1red.png', labelPng:'./jyosaku.png' },
+      { id:'p8_ataka',      pos:[  0,12, 47],  href:'https://tadappi.github.io/FU-atakaseki/',iconBlue:'./pin1blue.png',iconRed:'./pin1red.png',labelPng:'./ataka.png' },
+      { id:'p9_kiyo',       pos:[ 22,12, 47],  href:'https://tadappi.github.io/FU-kiyohira/',iconBlue:'./pin1blue.png', iconRed:'./pin1red.png', labelPng:'./kiyo.png' },
+      { id:'p10_enmei',     pos:[  2, 3,-10],  href:'https://tadappi.github.io/FU-enmei/',  iconBlue:'./pin1blue.png', iconRed:'./pin1red.png', labelPng:'./enmei.png' },
+      { id:'p11_rest',      pos:[ -3, 6,-50],  href:'https://www.fujiwaranosato.com/restaurant/', iconBlue:'./pin1blue.png', iconRed:'./pin1red.png', labelPng:'./rest.png' },
+      { id:'p12_kyoudo',    pos:[ 36, 9,-12],  href:'https://www.esashi-iwate.gr.jp/bunka/',iconBlue:'./pin1blue.png', iconRed:'./pin1red.png', labelPng:'./kyoudo.png' },
+    ];
+
+    PIN_DEFS.forEach(d=>{
+      const pin = createPin({
+        id: d.id,
+        pos: d.pos,
+        href: d.href,
+        iconBlue: d.iconBlue,
+        iconRed: d.iconRed,
+        labelPng: d.labelPng,
+        scale: 3,
+        labelHeight: 0.7,
+        labelOffset: [0, 1.0, 0],
+      });
+      root.add(pin);
+      clickableObjects.push(pin);
+      registerPin(pin);
     });
-    root.add(pin1); clickableObjects.push(pin1);
 
-    const pin2 = createPin({           //金色堂
-      pos: [-37, 15, 41],
-      href: './konjikido.mp4',
-      iconBlue: './pin1blue.png',
-      iconRed:  './pin1red.png',
-      labelPng: './konjiki.png',
-      scale: 3,
-      labelHeight: 0.7,
-      labelOffset: [0, 1.0, 0],
-    });
-    root.add(pin2); clickableObjects.push(pin2);
+    // ===== 疑似回転 赤ピン × 3（必要なら「文系/理系」にも混ぜられる）=====
+    const SPIN_PINS = [
+      {
+        id:'s1_kiyohira3d',
+        pos:[ 22, 12, 37],
+        href:'https://tadappi.github.io/FUJIWARANOSATO-kiyohira/',
+        labelPng:'./kiyohira.png'
+      },
+      {
+        id:'s2_seicho3d',
+        pos:[-16, 10,  1],
+        href:'https://tadappi.github.io/FUJIWARANO-SATO-seicho/',
+        labelPng:'./seicho.png'
+      },
+      {
+        id:'s3_kyara3d',
+        pos:[-27, 12, 22],
+        href:'https://tadappi.github.io/FUJIWARANO-SATO-kyara/',
+        labelPng:'./kyara.png'
+      },
+    ];
 
-    const pin3 = createPin({           //無量光院
-      pos: [-37, 3, 20],
-      href: './muryou.mp4',
-      iconBlue: './pin1blue.png',
-      iconRed:  './pin1red.png',
-      labelPng: './muryou.png',
-      scale: 3,
-      labelHeight: 0.7,
-      labelOffset: [0, 1.0, 0],
-    });
-    root.add(pin3); clickableObjects.push(pin3);
-
-const pin4 = createPin({           //義経持仏堂
-      pos: [0, 10, 22],
-      href: './yoshitsune.mp4',
-      iconBlue: './pin1blue.png',
-      iconRed:  './pin1red.png',
-      labelPng: './yositsune.png',
-      scale: 3,
-      labelHeight: 0.7,
-      labelOffset: [0, 1.0, 0],
-    });
-    root.add(pin4); clickableObjects.push(pin4);
-
-const pin5 = createPin({           //政庁南（天球）
-      pos: [-17, 3, 7],
-      href: 'https://tadappi.github.io/FU-seichoS/',
-      iconBlue: './pin1blue.png',
-      iconRed:  './pin1red.png',
-      labelPng: './seichoS.png',
-      scale: 3,
-      labelHeight: 0.7,
-      labelOffset: [0, 1.0, 0],
-    });
-    root.add(pin5); clickableObjects.push(pin5);
-
-const pin6 = createPin({           //町並み（天球）
-      pos: [-30, 3, 5],
-      href: 'https://tadappi.github.io/FU-machi/',
-      iconBlue: './pin1blue.png',
-      iconRed:  './pin1red.png',
-      labelPng: './machi.png',
-      scale: 3,
-      labelHeight: 0.7,
-      labelOffset: [0, 1.0, 0],
-    });
-    root.add(pin6); clickableObjects.push(pin6);
-
-const pin7 = createPin({           //城柵ゾーン（天球）
-      pos: [-14, 6, 55],
-      href: 'https://tadappi.github.io/FU-jyosaku/',
-      iconBlue: './pin1blue.png',
-      iconRed:  './pin1red.png',
-      labelPng: './jyosaku.png',
-      scale: 3,
-      labelHeight: 0.7,
-      labelOffset: [0, 1.0, 0],
-    });
-    root.add(pin7); clickableObjects.push(pin7);
-
-const pin8 = createPin({           //安宅関（天球）
-      pos: [0, 12, 47],
-      href: 'https://tadappi.github.io/FU-atakaseki/',
-      iconBlue: './pin1blue.png',
-      iconRed:  './pin1red.png',
-      labelPng: './ataka.png',
-      scale: 3,
-      labelHeight: 0.7,
-      labelOffset: [0, 1.0, 0],
-    });
-    root.add(pin8); clickableObjects.push(pin8);
-
- const pin9 = createPin({           //清衡館（天球）
-      pos: [22, 12, 47],
-      href: 'https://tadappi.github.io/FU-kiyohira/',
-      iconBlue: './pin1blue.png',
-      iconRed:  './pin1red.png',
-      labelPng: './kiyo.png',
-      scale: 3,
-      labelHeight: 0.7,
-      labelOffset: [0, 1.0, 0],
-    });
-    root.add(pin9); clickableObjects.push(pin9);   
-
- const pin10 = createPin({           //延命千年杉（天球）
-      pos: [2, 3, -10],
-      href: 'https://tadappi.github.io/FU-enmei/',
-      iconBlue: './pin1blue.png',
-      iconRed:  './pin1red.png',
-      labelPng: './enmei.png',
-      scale: 3,
-      labelHeight: 0.7,
-      labelOffset: [0, 1.0, 0],
-    });
-    root.add(pin10); clickableObjects.push(pin10);   
-
- const pin11 = createPin({           //レストラン清衡（link）
-      pos: [-3, 6, -50],
-      href: 'https://www.fujiwaranosato.com/restaurant/',
-      iconBlue: './pin1blue.png',
-      iconRed:  './pin1red.png',
-      labelPng: './rest.png',
-      scale: 3,
-      labelHeight: 0.7,
-      labelOffset: [0, 1.0, 0],
-    });
-    root.add(pin11); clickableObjects.push(pin11);   
-
- const pin12 = createPin({           //えさし郷土文化館（link）
-      pos: [36, 9, -12],
-      href: 'https://www.esashi-iwate.gr.jp/bunka/',
-      iconBlue: './pin1blue.png',
-      iconRed:  './pin1red.png',
-      labelPng: './kyoudo.png',
-      scale: 3,
-      labelHeight: 0.7,
-      labelOffset: [0, 1.0, 0],
-    });
-    root.add(pin12); clickableObjects.push(pin12);   
-
-
-    
-    
-
-    
-    // ===== 疑似回転 赤ピン × 3 =====
-const SPIN_PINS = [
-  { 
-    pos:[ 22, 12, 37],
-    href:'https://tadappi.github.io/FUJIWARANOSATO-kiyohira/',          // 3D清衡館
-    labelPng:'./kiyohira.png'
-  },
-  { 
-    pos:[-16, 10,  1],
-    href:'https://tadappi.github.io/FUJIWARANO-SATO-seicho/',  // 3D政庁へ
-    labelPng:'./seicho.png'
-  },
-  { 
-    pos:[-27, 12, 22],
-    href:'https://tadappi.github.io/FUJIWARANO-SATO-kyara/', // 3D伽羅御所
-    labelPng:'./kyara.png'
-  },
-];
-
-    SPIN_PINS.forEach(({pos, href, labelPng})=>{
+    SPIN_PINS.forEach(d=>{
       const sp = createSpinningPin({
-        pos, href,
+        id: d.id,
+        pos: d.pos,
+        href: d.href,
         icon: './pinbrightred.png',
         baseScale: 6,
         spinSpeed: 0.8,
         minFactor: 0.06,
-        labelPng,
+        labelPng: d.labelPng,
         labelHeight: 0.5,
         labelOffset: [0, 1.0, 0],
       });
       root.add(sp);
       clickableObjects.push(sp);
       clickableSpinPins.push(sp);
+
+      // ★スピンも「回収・落下」の対象にするなら登録する
+      // registerPin(sp);
+    });
+
+    // ========================= ここが「文系7・理系8」の割り当て =========================
+    // ★重複OK：両方の配列に同じIDを書けばOK
+    //
+    // 使えるID一覧：
+    // p1_event, p2_konjiki, p3_muryou, p4_yoshi, p5_seichoS, p6_machi,
+    // p7_jyosaku, p8_ataka, p9_kiyo, p10_enmei, p11_rest, p12_kyoudo
+    //
+    // （スピンも混ぜたいなら registerPin(sp) をONにして、ここに s1_... を追加）
+    const BUNKEI_IDS = [
+      'p1_event','p2_konjiki','p3_muryou','p4_yoshi','p9_kiyo','p11_rest','p12_kyoudo'
+    ]; // ← 7個（例）
+    const RIKEI_IDS = [
+      'p1_event','p5_seichoS','p6_machi','p7_jyosaku','p8_ataka','p9_kiyo','p10_enmei','p12_kyoudo'
+    ]; // ← 8個（例）
+
+    // 最初は「共通ピンなし」＝回収状態のまま
+    collectAllPins();
+
+    // ボタン
+    document.getElementById('btnBunkei').addEventListener('click', ()=>{
+      markUserInteraction();
+      showPinsByIds(BUNKEI_IDS);
+    });
+    document.getElementById('btnRikei').addEventListener('click', ()=>{
+      markUserInteraction();
+      showPinsByIds(RIKEI_IDS);
+    });
+    document.getElementById('btnCollect').addEventListener('click', ()=>{
+      markUserInteraction();
+      collectAllPins();
     });
 
   }, undefined, (err)=>{
@@ -648,21 +687,20 @@ const SPIN_PINS = [
   fM.add(params, 'rotateY', -180, 180, 1).name('Rotate Y [deg]');
   fM.add(params, 'rotateZ', -180, 180, 1).name('Rotate Z [deg]');
   const fV = gui.addFolder('View');
-  fV.add(params, 'autoRotate').name('Auto rotate').onChange(v=> {
-    controls.autoRotate = v;
-  });
+  fV.add(params, 'autoRotate').name('Auto rotate').onChange(v=> { controls.autoRotate = v; });
   fV.add(params, 'rotateSpeed', -3, 3, 0.1).name('Rotate speed').onChange(v=> controls.autoRotateSpeed = v);
   gui.add(params, 'showAxes').name('Show axes').onChange(v=> axes.visible = v);
-　gui.close();
-  
+  gui.close();
 
   // ========================= クリック（寄ってから小ウィンドウ＆軌道復帰用の軌道保存） =========================
   const _p = new THREE.Vector3(), _box = new THREE.Box3(), _size = new THREE.Vector3();
-  
-    renderer.domElement.addEventListener('click', (e)=>{
+
+  renderer.domElement.addEventListener('click', (e)=>{
     if (_flying) return;
 
-    // クリック（タップ）位置からレイを飛ばす
+    // ピンが「回収で非表示」の時は当たらないようにする（クリック判定から除外）
+    // visible=false の Sprite は Raycaster の intersectObjects で当たらない挙動になることが多いが、
+    // 念のため hover/クリック時にチェックする
     const r = renderer.domElement.getBoundingClientRect();
     const x = ((e.clientX - r.left) / r.width) * 2 - 1;
     const y = -((e.clientY - r.top) / r.height) * 2 + 1;
@@ -671,7 +709,6 @@ const SPIN_PINS = [
     const hits = raycaster.intersectObjects(clickableObjects, true);
     if (!hits.length) return;
 
-    // 当たったオブジェクトから「ピン本体」を取得
     let obj  = hits[0].object;
     let hit  = (obj.userData?.type)
       ? obj
@@ -679,30 +716,22 @@ const SPIN_PINS = [
         ? obj.parent
         : obj;
 
-    // hover 状態も同期（色など）
+    // 回収で見えてないピンは無視
+    if (hit.visible === false) return;
+
     if (hoverObject && hoverObject.userData.type === 'pin') {
-      if (!hoverObject.userData.noColorSwap) {
-        hoverObject.material = hoverObject.userData.mats.blue;
-      }
+      if (!hoverObject.userData.noColorSwap) hoverObject.material = hoverObject.userData.mats.blue;
     }
     hoverObject = hit;
     if (hoverObject && hoverObject.userData.type === 'pin') {
-      if (!hoverObject.userData.noColorSwap) {
-        hoverObject.material = hoverObject.userData.mats.red;
-      }
+      if (!hoverObject.userData.noColorSwap) hoverObject.material = hoverObject.userData.mats.red;
     }
 
     const ud = hoverObject.userData || {};
     const href = ud.href;
     if (!href) return;
 
-    // ここから下は、元のコードそのまま続けてOK
-    // （軌道位置を保存して寄りカメラ → 小ウィンドウ → 軌道復帰、の処理）
-
-  
-
-    
-    // この時点の「軌道上の位置」を記録（autoRotate中ならそのまま、そうでなければ基準軌道）
+    // この時点の「軌道上の位置」を記録
     if (hasBaseOrbit) {
       if (controls.autoRotate) {
         orbitPosBeforeFly.copy(camera.position);
@@ -725,8 +754,8 @@ const SPIN_PINS = [
     let desiredDist = THREE.MathUtils.clamp(d0 * 0.35, 10, 120);
     if (hoverObject.isMesh){
       _box.setFromObject(hoverObject); _box.getSize(_size);
-      const r = Math.max(_size.x, _size.y, _size.z) * 0.5;
-      desiredDist = THREE.MathUtils.clamp(r * 2.2, 10, 120);
+      const rr = Math.max(_size.x, _size.y, _size.z) * 0.5;
+      desiredDist = THREE.MathUtils.clamp(rr * 2.2, 10, 120);
     }
     const dir = camera.position.clone().sub(p).normalize();
     const autoCam = p.clone().add(dir.multiplyScalar(desiredDist));
@@ -742,31 +771,29 @@ const SPIN_PINS = [
   // ========================= ループ =========================
   const clock = new THREE.Clock();
 
-  function tick(){
+
+    function tick(){
     const dt = clock.getDelta();
     const t  = clock.elapsedTime;
+    const now = performance.now();
 
-    // レイキャスト
+    // レイキャスト（ホバー）
     raycaster.setFromCamera(mouseNDC, camera);
     const hits = raycaster.intersectObjects(clickableObjects, true);
     let hit = null;
     if (hits.length){
       const obj = hits[0].object;
       hit = (obj.userData?.type) ? obj : (obj.parent?.userData?.type) ? obj.parent : obj;
+      if (hit && hit.visible === false) hit = null; // 回収中はホバーしない
     }
 
-    // ホバー切替
     if (hoverObject !== hit) {
       if (hoverObject && hoverObject.userData.type === 'pin') {
-        if (!hoverObject.userData.noColorSwap) {
-          hoverObject.material = hoverObject.userData.mats.blue;
-        }
+        if (!hoverObject.userData.noColorSwap) hoverObject.material = hoverObject.userData.mats.blue;
       }
       hoverObject = hit;
       if (hoverObject && hoverObject.userData.type === 'pin') {
-        if (!hoverObject.userData.noColorSwap) {
-          hoverObject.material = hoverObject.userData.mats.red;
-        }
+        if (!hoverObject.userData.noColorSwap) hoverObject.material = hoverObject.userData.mats.red;
       }
       renderer.domElement.style.cursor = hoverObject ? 'pointer' : 'default';
     }
@@ -792,6 +819,9 @@ const SPIN_PINS = [
       sp.scale.y = conf.base;
     });
 
+    // ★「降って刺さる／回収」アニメ更新
+    allPins.forEach(pin=> updatePinAnim(pin, now));
+
     // モデル回転
     if (root){
       root.rotation.set(
@@ -802,30 +832,24 @@ const SPIN_PINS = [
     }
 
     // 無操作10秒で「距離＆高さは基準、方位は今のまま」でオートローテ再開
-    const nowMs = performance.now();
     const overlayVisible = overlay.classList.contains('visible');
     if (idleReturnArmed && !overlayVisible && !_flying && hasBaseOrbit && params.autoRotate){
-      if (nowMs - lastUserInputTime > IDLE_TIMEOUT_MS){
+      if (now - lastUserInputTime > IDLE_TIMEOUT_MS){
         idleReturnArmed = false;
 
-        // 基準の軌道中心
-        const baseCenter = baseOrbitTarget.clone(); // 普通は (0,0,0) :contentReference[oaicite:1]{index=1}
-        // 基準軌道のベクトル（中心→カメラ）
+        const baseCenter = baseOrbitTarget.clone();
         const baseVec    = baseOrbitPos.clone().sub(baseCenter);
         const baseRadius = baseVec.length();
         const baseY      = baseOrbitPos.y - baseCenter.y;
 
-        // 今のカメラの「方位」（Y軸周り）だけ取り出す
         const curVec = camera.position.clone().sub(baseCenter);
-        const yaw    = Math.atan2(curVec.z, curVec.x);  // 東西南北
+        const yaw    = Math.atan2(curVec.z, curVec.x);
 
-        // 基準の距離＆高さから水平方向の半径を計算
         const horizRadius = Math.max(
           1e-3,
           Math.sqrt(Math.max(0, baseRadius * baseRadius - baseY * baseY))
         );
 
-        // 方位は今のまま、距離＆高さは基準に合わせた位置
         const destPos = new THREE.Vector3(
           baseCenter.x + horizRadius * Math.cos(yaw),
           baseCenter.y + baseY,
@@ -833,20 +857,13 @@ const SPIN_PINS = [
         );
         const destTarget = baseCenter;
 
-        flyTo(
-          camera,
-          controls,
-          destPos,
-          destTarget,
-          2000,
-          ()=>{
-            controls.autoRotate = true;
-            params.autoRotate = true;
-          }
-        );
+        flyTo(camera, controls, destPos, destTarget, 2000, ()=>{
+          controls.autoRotate = true;
+          params.autoRotate = true;
+        });
       }
     }
-    
+
     controls.update();
     renderer.render(scene, camera);
     requestAnimationFrame(tick);
@@ -863,60 +880,3 @@ const SPIN_PINS = [
 </script>
 </body>
 </html>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
