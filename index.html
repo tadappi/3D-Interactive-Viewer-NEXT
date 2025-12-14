@@ -29,7 +29,7 @@
       box-shadow: 0 10px 30px rgba(0,0,0,0.6);
       overflow: hidden;
       display: none;
-      z-index: 10;
+      z-index: 10; /* GUIより前に出す */
     }
     #overlay.visible { display: block; }
     #overlay-header {
@@ -85,7 +85,7 @@
       position: fixed;
       top: 14px;
       left: 14px;
-      z-index: 20;
+      z-index: 20; /* titleやGUIより前 */
       display: flex;
       gap: 8px;
     }
@@ -104,7 +104,7 @@
     .mBtn:hover{ background: rgba(0,0,0,.68); }
     .mBtn:active{ transform: translateY(1px); }
     .mBtn.secondary{
-      width: 120px;
+      width: 120px; /* 回収だけ少し短く */
       font-weight: 700;
     }
   </style>
@@ -305,7 +305,7 @@
   window.addEventListener('keydown', markUserInteraction);
 
   let root = null;
-  const clickableObjects = [];
+  const clickableObjects = []; // ピン（リンクあり/なし）
   let hoverObject = null;
 
   // ========================= テクスチャキャッシュ =========================
@@ -356,7 +356,7 @@
     if (!texLabel) return null;
     const matLabel = new THREE.SpriteMaterial({ map: texLabel, transparent: true, depthTest: true });
     const label = new THREE.Sprite(matLabel);
-    label.scale.set(heightWorld, heightWorld, 1);
+    label.scale.set(heightWorld, heightWorld, 1); // 仮
     label.position.set(...offset);
     label.visible = true;
     label.userData = { fitByImage: true, targetH: heightWorld };
@@ -427,114 +427,354 @@
   }
 
   // ========================= 「降って刺さる」ピン制御 =========================
-  const allPins = [];
+  const allPins = [];            // 表示/回収対象（共通ピン12 + 必要ならスピンも）
   const pinById = new Map();
 
-  const DROP_FROM_Y = 80;
-  const DROP_MS = 850;
-  const COLLECT_MS = 650;
-// スカッシュ＆ストレッチ量（好みで調整）
-const STRETCH_UP   = 1.5; // 落下中に縦へ伸びる最大倍率
-const SQUASH_DOWN  = 0.55; // 着地時に縦につぶれる倍率
-  
+  const DROP_FROM_Y = 80;        // ここが「上から降ってくる高さ」
+  const DROP_MS = 850;           // 落下時間
+  const COLLECT_MS = 650;        // 回収時間
 
   function registerPin(pin){
     allPins.push(pin);
     pinById.set(pin.userData.id, pin);
 
+    // 元の位置（刺さる場所）
     const home = pin.position.clone();
+
+    // 回収位置（上）
     const raised = home.clone();
     raised.y += DROP_FROM_Y;
 
     pin.userData._homePos = home;
     pin.userData._raisedPos = raised;
 
-    // 最初は回収状態
+    // 最初は「回収状態」
     pin.position.copy(raised);
     pin.visible = false;
     if (pin.userData.label) pin.userData.label.visible = false;
 
-    pin.userData._anim = null; // {from,to,t0,dur,kind}
+    pin.userData._anim = null; // {from,to,t0,dur}
   }
 
-  function animatePinTo(pin, toVec3, ms, kind='move'){
+  function animatePinTo(pin, toVec3, ms){
     const from = pin.position.clone();
-    pin.userData._anim = { from, to: toVec3.clone(), t0: performance.now(), dur: ms, kind };
+    pin.userData._anim = { from, to: toVec3.clone(), t0: performance.now(), dur: ms };
     pin.visible = true;
     if (pin.userData.label) pin.userData.label.visible = true;
   }
 
-function updatePinAnim(pin, now){
-  const a = pin.userData._anim;
-  if (!a) return;
+  function updatePinAnim(pin, now){
+    const a = pin.userData._anim;
+    if (!a) return;
 
-  const t = Math.min(1, (now - a.t0) / a.dur);
+    const t = Math.min(1, (now - a.t0) / a.dur);
+    // ちょい気持ちいい落ち方（最後だけキュッ）
+    const easeOut = (x)=> 1 - Math.pow(1-x, 3);
+    const k = easeOut(t);
 
-  const easeOut = (x)=> 1 - Math.pow(1-x, 3);
-  const k = easeOut(t);
+    pin.position.lerpVectors(a.from, a.to, k);
 
-  // --- 位置 ---
-  const x = THREE.MathUtils.lerp(a.from.x, a.to.x, k);
-  const z = THREE.MathUtils.lerp(a.from.z, a.to.z, k);
-  let   y = THREE.MathUtils.lerp(a.from.y, a.to.y, k);
+    if (t >= 1){
+      pin.userData._anim = null;
 
-  // --- スケール（デフォルト） ---
-  let sx = 1.0;
-  let sy = 1.0;
-
-  // ================= 落下演出 =================
-  if (a.kind === 'drop') {
-
-    // ▼ 落下中：縦に伸びる（0.15〜0.65）
-    if (t > 0.15 && t < 0.65){
-      const u = (t - 0.15) / 0.5; // 0..1
-      const stretch = THREE.MathUtils.lerp(1.0, STRETCH_UP, Math.sin(u * Math.PI));
-      sy = stretch;
-      sx = 1 / Math.sqrt(stretch); // 体積感キープ
-    }
-
-    // ▼ 着地直前〜直後：つぶれる + ビヨヨン
-    if (t > 0.78){
-      const u = (t - 0.78) / 0.22; // 0..1
-
-      // つぶれ
-      const squash = THREE.MathUtils.lerp(1.0, SQUASH_DOWN, Math.sin(u * Math.PI));
-      sy *= squash;
-      sx *= 1 / squash;
-
-      // ビヨヨン（前に入れたやつ）
-      const damp = Math.exp(-8 * u);
-      const wobble = Math.sin(u * Math.PI * 5);
-      const amp = 1.2;
-      y += (-amp) * wobble * damp;
+      // もし回収位置に着いたら見えなくする（クリック判定からも外す）
+      const isRaised = pin.position.distanceTo(pin.userData._raisedPos) < 1e-3;
+      if (isRaised){
+        pin.visible = false;
+        if (pin.userData.label) pin.userData.label.visible = false;
+      }
     }
   }
 
-  // --- 適用 ---
-  pin.position.set(x, y, z);
-  pin.scale.setScalar(1);        // 基準リセット
-  pin.scale.x *= sx;
-  pin.scale.y *= sy;
-
-  // --- 終了処理 ---
-  if (t >= 1){
-    pin.userData._anim = null;
-
-    const isRaised = pin.position.distanceTo(pin.userData._raisedPos) < 1e-3;
-    if (isRaised){
-      pin.visible = false;
-      if (pin.userData.label) pin.userData.label.visible = false;
-    } else {
-      pin.position.copy(pin.userData._homePos);
-      pin.scale.setScalar(1); // 最終的に正規サイズへ
-    }
-  }
-}
-
-
-
-  
   function showPinsByIds(idList){
+    const want = new Set(idList);
+
+    // オーバーレイ開いてたら閉じる（回収/切替の時に邪魔なので）
+    overlay.classList.remove('visible');
+    overlayFrame.src = 'about:blank';
+
+    allPins.forEach(pin=>{
+      const id = pin.userData.id;
+      if (want.has(id)){
+        animatePinTo(pin, pin.userData._homePos, DROP_MS);
+      } else {
+        animatePinTo(pin, pin.userData._raisedPos, COLLECT_MS);
+      }
+    });
+  }
+
+  function collectAllPins(){
+    overlay.classList.remove('visible');
+    overlayFrame.src = 'about:blank';
+    allPins.forEach(pin=>{
+      animatePinTo(pin, pin.userData._raisedPos, COLLECT_MS);
+    });
+  }
+
+  // ========================= モデル読込 =========================
+  const clickableSpinPins = [];
+  const gltfLoader = new GLTFLoader();
+
+  gltfLoader.load('./100.glb', (gltf) => {
+    root = gltf.scene;
+    root.traverse(o => { if (o.isMesh){ o.castShadow = true; o.receiveShadow = false; }});
+    scene.add(root);
+
+    // フィット
+    const box = new THREE.Box3().setFromObject(root);
+    const size = new THREE.Vector3(), center = new THREE.Vector3();
+    box.getSize(size); box.getCenter(center);
+    root.position.sub(center);
+    const maxDim = Math.max(size.x, size.y, size.z);
+    const dist = maxDim * 1.6;
+    camera.position.set(dist*0.3, dist*0.2, dist*0.3);
+    controls.target.set(0,0,0);
+    controls.update();
+
+    // この時のビューを「軌道の基準位置」として保存
+    baseOrbitPos.copy(camera.position);
+    baseOrbitTarget.copy(controls.target);
+    hasBaseOrbit = true;
+
+    // ===== 共通ピン 12個（いまのやつを「定義配列」にした）=====
+    const PIN_DEFS = [
+      { id:'p1_event',      pos:[-14, 3, -20], href:'./eventarea.mp4',                      iconBlue:'./pin1blue.png', iconRed:'./pin1red.png', labelPng:'./event.png' },
+      { id:'p2_konjiki',    pos:[-37,15, 41],  href:'./konjikido.mp4',                      iconBlue:'./pin1blue.png', iconRed:'./pin1red.png', labelPng:'./konjiki.png' },
+      { id:'p3_muryou',     pos:[-37, 3, 20],  href:'./muryou.mp4',                         iconBlue:'./pin1blue.png', iconRed:'./pin1red.png', labelPng:'./muryou.png' },
+      { id:'p4_yoshi',      pos:[  0,10, 22],  href:'./yoshitsune.mp4',                     iconBlue:'./pin1blue.png', iconRed:'./pin1red.png', labelPng:'./yositsune.png' },
+      { id:'p5_seichoS',    pos:[-17, 3,  7],  href:'https://tadappi.github.io/FU-seichoS/',iconBlue:'./pin1blue.png', iconRed:'./pin1red.png', labelPng:'./seichoS.png' },
+      { id:'p6_machi',      pos:[-30, 3,  5],  href:'https://tadappi.github.io/FU-machi/',  iconBlue:'./pin1blue.png', iconRed:'./pin1red.png', labelPng:'./machi.png' },
+      { id:'p7_jyosaku',    pos:[-14, 6, 55],  href:'https://tadappi.github.io/FU-jyosaku/',iconBlue:'./pin1blue.png', iconRed:'./pin1red.png', labelPng:'./jyosaku.png' },
+      { id:'p8_ataka',      pos:[  0,12, 47],  href:'https://tadappi.github.io/FU-atakaseki/',iconBlue:'./pin1blue.png',iconRed:'./pin1red.png',labelPng:'./ataka.png' },
+      { id:'p9_kiyo',       pos:[ 22,12, 47],  href:'https://tadappi.github.io/FU-kiyohira/',iconBlue:'./pin1blue.png', iconRed:'./pin1red.png', labelPng:'./kiyo.png' },
+      { id:'p10_enmei',     pos:[  2, 3,-10],  href:'https://tadappi.github.io/FU-enmei/',  iconBlue:'./pin1blue.png', iconRed:'./pin1red.png', labelPng:'./enmei.png' },
+      { id:'p11_rest',      pos:[ -3, 6,-50],  href:'https://www.fujiwaranosato.com/restaurant/', iconBlue:'./pin1blue.png', iconRed:'./pin1red.png', labelPng:'./rest.png' },
+      { id:'p12_kyoudo',    pos:[ 36, 9,-12],  href:'https://www.esashi-iwate.gr.jp/bunka/',iconBlue:'./pin1blue.png', iconRed:'./pin1red.png', labelPng:'./kyoudo.png' },
+    ];
+
+    PIN_DEFS.forEach(d=>{
+      const pin = createPin({
+        id: d.id,
+        pos: d.pos,
+        href: d.href,
+        iconBlue: d.iconBlue,
+        iconRed: d.iconRed,
+        labelPng: d.labelPng,
+        scale: 3,
+        labelHeight: 0.7,
+        labelOffset: [0, 1.0, 0],
+      });
+      root.add(pin);
+      clickableObjects.push(pin);
+      registerPin(pin);
+    });
+
+    // ===== 疑似回転 赤ピン × 3（必要なら「文系/理系」にも混ぜられる）=====
+    const SPIN_PINS = [
+      {
+        id:'s1_kiyohira3d',
+        pos:[ 22, 12, 37],
+        href:'https://tadappi.github.io/FUJIWARANOSATO-kiyohira/',
+        labelPng:'./kiyohira.png'
+      },
+      {
+        id:'s2_seicho3d',
+        pos:[-16, 10,  1],
+        href:'https://tadappi.github.io/FUJIWARANO-SATO-seicho/',
+        labelPng:'./seicho.png'
+      },
+      {
+        id:'s3_kyara3d',
+        pos:[-27, 12, 22],
+        href:'https://tadappi.github.io/FUJIWARANO-SATO-kyara/',
+        labelPng:'./kyara.png'
+      },
+    ];
+
+    SPIN_PINS.forEach(d=>{
+      const sp = createSpinningPin({
+        id: d.id,
+        pos: d.pos,
+        href: d.href,
+        icon: './pinbrightred.png',
+        baseScale: 6,
+        spinSpeed: 0.8,
+        minFactor: 0.06,
+        labelPng: d.labelPng,
+        labelHeight: 0.5,
+        labelOffset: [0, 1.0, 0],
+      });
+      root.add(sp);
+      clickableObjects.push(sp);
+      clickableSpinPins.push(sp);
+
+      // ★スピンも「回収・落下」の対象にするなら登録する
+      // registerPin(sp);
+    });
+
+    // ========================= ここが「文系7・理系8」の割り当て =========================
+    // ★重複OK：両方の配列に同じIDを書けばOK
+    //
+    // 使えるID一覧：
+    // p1_event, p2_konjiki, p3_muryou, p4_yoshi, p5_seichoS, p6_machi,
+    // p7_jyosaku, p8_ataka, p9_kiyo, p10_enmei, p11_rest, p12_kyoudo
+    //
+    // （スピンも混ぜたいなら registerPin(sp) をONにして、ここに s1_... を追加）
+    const BUNKEI_IDS = [
+      'p1_event','p2_konjiki','p3_muryou','p4_yoshi','p9_kiyo','p11_rest','p12_kyoudo'
+    ]; // ← 7個（例）
+    const RIKEI_IDS = [
+      'p1_event','p5_seichoS','p6_machi','p7_jyosaku','p8_ataka','p9_kiyo','p10_enmei','p12_kyoudo'
+    ]; // ← 8個（例）
+
+    // 最初は「共通ピンなし」＝回収状態のまま
+    collectAllPins();
+
+    // ボタン
+    document.getElementById('btnBunkei').addEventListener('click', ()=>{
+      markUserInteraction();
+      showPinsByIds(BUNKEI_IDS);
+    });
+    document.getElementById('btnRikei').addEventListener('click', ()=>{
+      markUserInteraction();
+      showPinsByIds(RIKEI_IDS);
+    });
+    document.getElementById('btnCollect').addEventListener('click', ()=>{
+      markUserInteraction();
+      collectAllPins();
+    });
+
+  }, undefined, (err)=>{
+    console.error(err);
+    alert('GLBの読み込みに失敗しました。パス/ファイル名をご確認ください。');
+  });
+
+  // ========================= GUI =========================
+  const gui = new GUI({ title: 'Controls' });
+  const params = {
+    background: DEFAULT_BG,
+    ambientIntensity: ambient.intensity,
+    sunIntensity: sun.intensity,
+    sunElevDeg: 35,
+    sunAziDeg: 25,
+    autoRotate: controls.autoRotate,
+    rotateSpeed: controls.autoRotateSpeed,
+    showGroundShadow: ground.visible,
+    showAxes: false,
+    rotateX: 0, rotateY: 0, rotateZ: 0
+  };
+  const upSun = ()=>{
+    const elev = THREE.MathUtils.degToRad(params.sunElevDeg);
+    const azi  = THREE.MathUtils.degToRad(params.sunAziDeg);
+    const r = 100;
+    sun.position.set(
+      r*Math.cos(elev)*Math.cos(azi),
+      r*Math.sin(elev),
+      r*Math.cos(elev)*Math.sin(azi)
+    );
+  };
+  upSun();
+
+  gui.addColor(params, 'background').name('Background').onChange(v=> scene.background = new THREE.Color(v));
+  const fL = gui.addFolder('Lighting');
+  fL.add(params, 'ambientIntensity', 0, 2.5, 0.01).name('Ambient').onChange(v=> ambient.intensity = v);
+  fL.add(params, 'sunIntensity', 0, 3, 0.01).name('Sun').onChange(v=> sun.intensity = v);
+  fL.add(params, 'sunElevDeg', 0, 90, 1).name('Sun Elev [deg]').onChange(upSun);
+  fL.add(params, 'sunAziDeg', -180, 180, 1).name('Sun Azi [deg]').onChange(upSun);
+  fL.add(params, 'showGroundShadow').name('Ground shadow').onChange(v=> ground.visible = v);
+  const fM = gui.addFolder('Model Rotation');
+  fM.add(params, 'rotateX', -180, 180, 1).name('Rotate X [deg]');
+  fM.add(params, 'rotateY', -180, 180, 1).name('Rotate Y [deg]');
+  fM.add(params, 'rotateZ', -180, 180, 1).name('Rotate Z [deg]');
+  const fV = gui.addFolder('View');
+  fV.add(params, 'autoRotate').name('Auto rotate').onChange(v=> { controls.autoRotate = v; });
+  fV.add(params, 'rotateSpeed', -3, 3, 0.1).name('Rotate speed').onChange(v=> controls.autoRotateSpeed = v);
+  gui.add(params, 'showAxes').name('Show axes').onChange(v=> axes.visible = v);
+  gui.close();
+
+  // ========================= クリック（寄ってから小ウィンドウ＆軌道復帰用の軌道保存） =========================
+  const _p = new THREE.Vector3(), _box = new THREE.Box3(), _size = new THREE.Vector3();
+
+  renderer.domElement.addEventListener('click', (e)=>{
+    if (_flying) return;
+
+    // ピンが「回収で非表示」の時は当たらないようにする（クリック判定から除外）
+    // visible=false の Sprite は Raycaster の intersectObjects で当たらない挙動になることが多いが、
+    // 念のため hover/クリック時にチェックする
+    const r = renderer.domElement.getBoundingClientRect();
+    const x = ((e.clientX - r.left) / r.width) * 2 - 1;
+    const y = -((e.clientY - r.top) / r.height) * 2 + 1;
+
+    raycaster.setFromCamera({ x, y }, camera);
+    const hits = raycaster.intersectObjects(clickableObjects, true);
+    if (!hits.length) return;
+
+    let obj  = hits[0].object;
+    let hit  = (obj.userData?.type)
+      ? obj
+      : (obj.parent?.userData?.type)
+        ? obj.parent
+        : obj;
+
+    // 回収で見えてないピンは無視
+    if (hit.visible === false) return;
+
+    if (hoverObject && hoverObject.userData.type === 'pin') {
+      if (!hoverObject.userData.noColorSwap) hoverObject.material = hoverObject.userData.mats.blue;
+    }
+    hoverObject = hit;
+    if (hoverObject && hoverObject.userData.type === 'pin') {
+      if (!hoverObject.userData.noColorSwap) hoverObject.material = hoverObject.userData.mats.red;
+    }
+
+    const ud = hoverObject.userData || {};
+    const href = ud.href;
+    if (!href) return;
+
+    // この時点の「軌道上の位置」を記録
+    if (hasBaseOrbit) {
+      if (controls.autoRotate) {
+        orbitPosBeforeFly.copy(camera.position);
+        orbitTargetBeforeFly.copy(controls.target);
+      } else {
+        orbitPosBeforeFly.copy(baseOrbitPos);
+        orbitTargetBeforeFly.copy(baseOrbitTarget);
+      }
+      hasOrbitBeforeFly = true;
+    } else {
+      hasOrbitBeforeFly = false;
+    }
+
+    markUserInteraction();
+
+    hoverObject.getWorldPosition(_p);
+    const p = _p.clone();
+    const d0 = camera.position.distanceTo(p);
+
+    let desiredDist = THREE.MathUtils.clamp(d0 * 0.35, 10, 120);
+    if (hoverObject.isMesh){
+      _box.setFromObject(hoverObject); _box.getSize(_size);
+      const rr = Math.max(_size.x, _size.y, _size.z) * 0.5;
+      desiredDist = THREE.MathUtils.clamp(rr * 2.2, 10, 120);
+    }
+    const dir = camera.position.clone().sub(p).normalize();
+    const autoCam = p.clone().add(dir.multiplyScalar(desiredDist));
+    const destPos = (ud.camPos instanceof THREE.Vector3) ? ud.camPos.clone() : autoCam;
+    const lookAt  = (ud.lookAt instanceof THREE.Vector3) ? ud.lookAt.clone() : p.clone();
+    const duration = (typeof ud.flyMs === 'number') ? ud.flyMs : 1500;
+
+    flyTo(camera, controls, destPos, lookAt, duration, ()=>{
+      openOverlay(href);
+    });
+  });
+
+  // ========================= ループ =========================
+  const clock = new THREE.Clock();
+
+
+
+
+    function showPinsByIds(idList){
     const want = new Set(idList);
 
     overlay.classList.remove('visible');
@@ -585,18 +825,18 @@ function updatePinAnim(pin, now){
 
     // ===== 共通ピン 12個 =====
     const PIN_DEFS = [
-      { id:'p1_event',      pos:[-14, 3, -20], href:'./eventarea.mp4',                      iconBlue:'./pin1blue.png', iconRed:'./pin1red.png', labelPng:'./event.png' },
-      { id:'p2_konjiki',    pos:[-37,15, 41],  href:'./konjikido.mp4',                      iconBlue:'./pin1blue.png', iconRed:'./pin1red.png', labelPng:'./konjiki.png' },
-      { id:'p3_muryou',     pos:[-37, 3, 20],  href:'./muryou.mp4',                         iconBlue:'./pin1blue.png', iconRed:'./pin1red.png', labelPng:'./muryou.png' },
-      { id:'p4_yoshi',      pos:[  0,10, 22],  href:'./yoshitsune.mp4',                     iconBlue:'./pin1blue.png', iconRed:'./pin1red.png', labelPng:'./yositsune.png' },
-      { id:'p5_seichoS',    pos:[-17, 3,  7],  href:'https://tadappi.github.io/FU-seichoS/',iconBlue:'./pin1blue.png', iconRed:'./pin1red.png', labelPng:'./seichoS.png' },
-      { id:'p6_machi',      pos:[-30, 3,  5],  href:'https://tadappi.github.io/FU-machi/',  iconBlue:'./pin1blue.png', iconRed:'./pin1red.png', labelPng:'./machi.png' },
-      { id:'p7_jyosaku',    pos:[-14, 6, 55],  href:'https://tadappi.github.io/FU-jyosaku/',iconBlue:'./pin1blue.png', iconRed:'./pin1red.png', labelPng:'./jyosaku.png' },
-      { id:'p8_ataka',      pos:[  0,12, 47],  href:'https://tadappi.github.io/FU-atakaseki/',iconBlue:'./pin1blue.png',iconRed:'./pin1red.png',labelPng:'./ataka.png' },
-      { id:'p9_kiyo',       pos:[ 22,12, 47],  href:'https://tadappi.github.io/FU-kiyohira/',iconBlue:'./pin1blue.png', iconRed:'./pin1red.png', labelPng:'./kiyo.png' },
-      { id:'p10_enmei',     pos:[  2, 3,-10],  href:'https://tadappi.github.io/FU-enmei/',  iconBlue:'./pin1blue.png', iconRed:'./pin1red.png', labelPng:'./enmei.png' },
+      { id:'p1_event',      pos:[-14, 3, -20], href:'./eventarea.mp4',                       iconBlue:'./pin1blue.png', iconRed:'./pin1red.png', labelPng:'./event.png' },
+      { id:'p2_konjiki',    pos:[-37,15, 41],  href:'./konjikido.mp4',                       iconBlue:'./pin1blue.png', iconRed:'./pin1red.png', labelPng:'./konjiki.png' },
+      { id:'p3_muryou',     pos:[-37, 3, 20],  href:'./muryou.mp4',                          iconBlue:'./pin1blue.png', iconRed:'./pin1red.png', labelPng:'./muryou.png' },
+      { id:'p4_yoshi',      pos:[  0,10, 22],  href:'./yoshitsune.mp4',                      iconBlue:'./pin1blue.png', iconRed:'./pin1red.png', labelPng:'./yositsune.png' },
+      { id:'p5_seichoS',    pos:[-17, 3,  7],  href:'https://tadappi.github.io/FU-seichoS/', iconBlue:'./pin1blue.png', iconRed:'./pin1red.png', labelPng:'./seichoS.png' },
+      { id:'p6_machi',      pos:[-30, 3,  5],  href:'https://tadappi.github.io/FU-machi/',   iconBlue:'./pin1blue.png', iconRed:'./pin1red.png', labelPng:'./machi.png' },
+      { id:'p7_jyosaku',    pos:[-14, 6, 55],  href:'https://tadappi.github.io/FU-jyosaku/', iconBlue:'./pin1blue.png', iconRed:'./pin1red.png', labelPng:'./jyosaku.png' },
+      { id:'p8_ataka',      pos:[  0,12, 47],  href:'https://tadappi.github.io/FU-atakaseki/', iconBlue:'./pin1blue.png', iconRed:'./pin1red.png', labelPng:'./ataka.png' },
+      { id:'p9_kiyo',       pos:[ 22,12, 47],  href:'https://tadappi.github.io/FU-kiyohira/', iconBlue:'./pin1blue.png', iconRed:'./pin1red.png', labelPng:'./kiyo.png' },
+      { id:'p10_enmei',     pos:[  2, 3,-10],  href:'https://tadappi.github.io/FU-enmei/',   iconBlue:'./pin1blue.png', iconRed:'./pin1red.png', labelPng:'./enmei.png' },
       { id:'p11_rest',      pos:[ -3, 6,-50],  href:'https://www.fujiwaranosato.com/restaurant/', iconBlue:'./pin1blue.png', iconRed:'./pin1red.png', labelPng:'./rest.png' },
-      { id:'p12_kyoudo',    pos:[ 36, 9,-12],  href:'https://www.esashi-iwate.gr.jp/bunka/',iconBlue:'./pin1blue.png', iconRed:'./pin1red.png', labelPng:'./kyoudo.png' },
+      { id:'p12_kyoudo',    pos:[ 36, 9,-12],  href:'https://www.esashi-iwate.gr.jp/bunka/', iconBlue:'./pin1blue.png', iconRed:'./pin1red.png', labelPng:'./kyoudo.png' },
     ];
 
     PIN_DEFS.forEach(d=>{
@@ -618,24 +858,9 @@ function updatePinAnim(pin, now){
 
     // ===== 疑似回転 赤ピン × 3 =====
     const SPIN_PINS = [
-      {
-        id:'s1_kiyohira3d',
-        pos:[ 22, 12, 37],
-        href:'https://tadappi.github.io/FUJIWARANOSATO-kiyohira/',
-        labelPng:'./kiyohira.png'
-      },
-      {
-        id:'s2_seicho3d',
-        pos:[-16, 10,  1],
-        href:'https://tadappi.github.io/FUJIWARANO-SATO-seicho/',
-        labelPng:'./seicho.png'
-      },
-      {
-        id:'s3_kyara3d',
-        pos:[-27, 12, 22],
-        href:'https://tadappi.github.io/FUJIWARANO-SATO-kyara/',
-        labelPng:'./kyara.png'
-      },
+      { id:'s1_kiyohira3d', pos:[ 22, 12, 37], href:'https://tadappi.github.io/FUJIWARANOSATO-kiyohira/', labelPng:'./kiyohira.png' },
+      { id:'s2_seicho3d',   pos:[-16, 10,  1], href:'https://tadappi.github.io/FUJIWARANO-SATO-seicho/',   labelPng:'./seicho.png' },
+      { id:'s3_kyara3d',    pos:[-27, 12, 22], href:'https://tadappi.github.io/FUJIWARANO-SATO-kyara/',    labelPng:'./kyara.png' },
     ];
 
     SPIN_PINS.forEach(d=>{
@@ -807,7 +1032,6 @@ function updatePinAnim(pin, now){
   // ========================= ループ =========================
   const clock = new THREE.Clock();
 
-
   function tick(){
     const dt = clock.getDelta();
     const t  = clock.elapsedTime;
@@ -916,5 +1140,3 @@ function updatePinAnim(pin, now){
 </script>
 </body>
 </html>
-
-  
