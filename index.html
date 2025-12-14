@@ -456,13 +456,14 @@
     pin.userData._anim = null; // {from,to,t0,dur}
   }
 
-  function animatePinTo(pin, toVec3, ms){
-    const from = pin.position.clone();
-    pin.userData._anim = { from, to: toVec3.clone(), t0: performance.now(), dur: ms };
-    pin.visible = true;
-    if (pin.userData.label) pin.userData.label.visible = true;
-  }
+ function animatePinTo(pin, toVec3, ms, kind='move'){
+  const from = pin.position.clone();
+  pin.userData._anim = { from, to: toVec3.clone(), t0: performance.now(), dur: ms, kind };
+  pin.visible = true;
+  if (pin.userData.label) pin.userData.label.visible = true;
+}
 
+  
   function updatePinAnim(pin, now){
     const a = pin.userData._anim;
     if (!a) return;
