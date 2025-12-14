@@ -586,6 +586,24 @@
   }
 
   // ★順次落下 show（ここから後半に続く）
+// ========================= カメラから近い順に並べ替え =========================
+function sortPinsByCameraDistance(ids){
+  const camPos = camera.position.clone();
+
+  return ids
+    .map(id => {
+      const pin = pinById.get(id);
+      if (!pin) return null;
+
+      const wp = new THREE.Vector3();
+      pin.getWorldPosition(wp);
+
+      return { id, dist: camPos.distanceTo(wp) };
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.dist - b.dist) // ★近い順
+    .map(o => o.id);
+}
 
 
   function showPinsByIds(idList){
@@ -966,3 +984,4 @@
 </html>
 
   
+
