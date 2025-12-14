@@ -167,6 +167,35 @@
   controls.autoRotateSpeed = 0.5;
   controls.target.set(0, 0, 0);
 
+  // ========================= 効果音（WebAudio） =========================
+  // 同フォルダに置く：
+  //   ./pin_fall.wav   （落下開始：ヒュッ）
+  //   ./pin_stick.wav  （刺さる：ポン）
+  const audioListener = new THREE.AudioListener();
+  camera.add(audioListener);
+
+  const audioLoader = new THREE.AudioLoader();
+  let fallBuffer = null;
+  let stickBuffer = null;
+
+  audioLoader.load('./pin_fall.wav',  (buf)=>{ fallBuffer = buf; }, undefined, ()=>{ /* 読めなくても動作は続行 */ });
+  audioLoader.load('./pin_stick.wav', (buf)=>{ stickBuffer = buf; }, undefined, ()=>{});
+
+  function ensureAudioUnlocked(){
+    // ユーザー操作後に context が resume される（ブラウザ仕様）
+    const ctx = audioListener.context;
+    if (ctx && ctx.state === 'suspended') ctx.resume();
+  }
+
+  function playOneShot(buffer, volume=0.35){
+    if (!buffer) return;
+    ensureAudioUnlocked();
+    const s = new THREE.Audio(audioListener);
+    s.setBuffer(buffer);
+    s.setVolume(volume);
+    s.play();
+  }
+
   // 「軌道」用の基準ビュー
   const baseOrbitPos = new THREE.Vector3();
   const baseOrbitTarget = new THREE.Vector3();
@@ -183,6 +212,7 @@
   let idleReturnArmed = false;
 
   function markUserInteraction(){
+    ensureAudioUnlocked();
     lastUserInputTime = performance.now();
     idleReturnArmed = true;
   }
@@ -436,9 +466,19 @@
   const DROP_MS = 850;
   const COLLECT_MS = 650;
 
+  // ★順次落下（0.5秒間隔）
+  const DROP_INTERVAL_MS = 500;
+  let pendingDropTimers = [];
+
   // スカッシュ＆ストレッチ量（好みで調整）
   const STRETCH_UP   = 1.5;  // 落下中に縦へ伸びる最大倍率
   const SQUASH_DOWN  = 0.55; // 着地時に縦につぶれる倍率
+
+  function clearPendingDrops(){
+    if (!pendingDropTimers.length) return;
+    pendingDropTimers.forEach(id=> clearTimeout(id));
+    pendingDropTimers = [];
+  }
 
   function registerPin(pin){
     allPins.push(pin);
@@ -456,14 +496,19 @@
     pin.visible = false;
     if (pin.userData.label) pin.userData.label.visible = false;
 
-    pin.userData._anim = null; // {from,to,t0,dur,kind}
+    pin.userData._anim = null; // {from,to,t0,dur,kind,_stickPlayed?}
   }
 
   function animatePinTo(pin, toVec3, ms, kind='move'){
     const from = pin.position.clone();
-    pin.userData._anim = { from, to: toVec3.clone(), t0: performance.now(), dur: ms, kind };
+    pin.userData._anim = { from, to: toVec3.clone(), t0: performance.now(), dur: ms, kind, _stickPlayed:false };
     pin.visible = true;
     if (pin.userData.label) pin.userData.label.visible = true;
+
+    // ★効果音：落下開始
+    if (kind === 'drop') {
+      playOneShot(fallBuffer, 0.25);
+    }
   }
 
   function updatePinAnim(pin, now){
@@ -509,6 +554,12 @@
         const wobble = Math.sin(u * Math.PI * 5);
         const amp = 1.2;
         y += (-amp) * wobble * damp;
+
+        // ★効果音：刺さる（1回だけ）
+        if (!a._stickPlayed && t > 0.92){
+          a._stickPlayed = true;
+          playOneShot(stickBuffer, 0.35);
+        }
       }
     }
 
@@ -534,23 +585,56 @@
     }
   }
 
-    function showPinsByIds(idList){
+  // ★順次落下 show（ここから後半に続く）
+// ========================= カメラから近い順に並べ替え =========================
+function sortPinsByCameraDistance(ids){
+  const camPos = camera.position.clone();
+
+  return ids
+    .map(id => {
+      const pin = pinById.get(id);
+      if (!pin) return null;
+
+      const wp = new THREE.Vector3();
+      pin.getWorldPosition(wp);
+
+      return { id, dist: camPos.distanceTo(wp) };
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.dist - b.dist) // ★近い順
+    .map(o => o.id);
+}
+
+
+  function showPinsByIds(idList){
+    clearPendingDrops();
+
     const want = new Set(idList);
 
     overlay.classList.remove('visible');
     overlayFrame.src = 'about:blank';
 
+    // まず「出さないピン」は即回収（同時でOK）
     allPins.forEach(pin=>{
       const id = pin.userData.id;
-      if (want.has(id)){
-        animatePinTo(pin, pin.userData._homePos, DROP_MS, 'drop');
-      } else {
+      if (!want.has(id)){
         animatePinTo(pin, pin.userData._raisedPos, COLLECT_MS, 'collect');
       }
+    });
+
+    // 「出すピン」だけ 0.5秒間隔で順次落下（idListの順番を尊重）
+    idList.forEach((id, i)=>{
+      const pin = pinById.get(id);
+      if (!pin) return;
+      const timerId = setTimeout(()=>{
+        animatePinTo(pin, pin.userData._homePos, DROP_MS, 'drop');
+      }, i * DROP_INTERVAL_MS);
+      pendingDropTimers.push(timerId);
     });
   }
 
   function collectAllPins(){
+    clearPendingDrops();
     overlay.classList.remove('visible');
     overlayFrame.src = 'about:blank';
     allPins.forEach(pin=>{
@@ -639,9 +723,7 @@
       root.add(sp);
       clickableObjects.push(sp);
       clickableSpinPins.push(sp);
-
-      // ★スピンも「回収・落下」の対象にしたいなら次の1行を有効化
-      // registerPin(sp);
+      // registerPin(sp); // ←必要なら有効化
     });
 
     // ========================= 文系7・理系8（重複OK） =========================
@@ -658,11 +740,12 @@
     // ボタン
     document.getElementById('btnBunkei').addEventListener('click', ()=>{
       markUserInteraction();
-      showPinsByIds(BUNKEI_IDS);
+　　showPinsByIds(sortPinsByCameraDistance(BUNKEI_IDS));
+      
     });
     document.getElementById('btnRikei').addEventListener('click', ()=>{
       markUserInteraction();
-      showPinsByIds(RIKEI_IDS);
+showPinsByIds(sortPinsByCameraDistance(RIKEI_IDS));
     });
     document.getElementById('btnCollect').addEventListener('click', ()=>{
       markUserInteraction();
@@ -900,3 +983,8 @@
 </script>
 </body>
 </html>
+
+  
+
+
+
