@@ -700,11 +700,9 @@ function sortPinsByCameraDistance(ids){
       registerPin(pin);
     });
 
-    // ===== 疑似回転 赤ピン × 3 =====
+    // ===== 疑似回転 赤ピン =====
     const SPIN_PINS = [
       { id:'s1_kiyohira3d', pos:[ 22, 12, 37], href:'https://tadappi.github.io/FUJIWARANOSATO-kiyohira/', labelPng:'./kiyohira.png' },
-      { id:'s2_seicho3d',   pos:[-16, 10,  1], href:'https://tadappi.github.io/FUJIWARANO-SATO-seicho/',   labelPng:'./seicho.png' },
-      { id:'s3_kyara3d',    pos:[-27, 12, 22], href:'https://tadappi.github.io/FUJIWARANO-SATO-kyara/',    labelPng:'./kyara.png' },
     ];
 
     SPIN_PINS.forEach(d=>{
@@ -985,6 +983,7 @@ showPinsByIds(sortPinsByCameraDistance(RIKEI_IDS));
 </html>
 
   
+
 
 
 
