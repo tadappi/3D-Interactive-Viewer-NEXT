@@ -357,6 +357,7 @@
     size=[70,25],     // [width,height]（ワールド）
     y=0.25,           // 地面よりちょい上
     opacity=1.0
+    yawDeg=0            // ★追加：Y軸まわり角度（度）
   }){
     const tex = loadTex(png);
     const geo = new THREE.PlaneGeometry(size[0], size[1]);
@@ -757,6 +758,7 @@
       center: [-10, 0, -30], // ←まずは仮（あとで詰める）
       size: [80, 28],        // ←まずは仮（あとで詰める）
       y: 3.0
+      yawDeg: 35     // ★追加：ここを回して詰める
     });
     root.add(routeSeikyo);
     routeByPinId.set('p1_event', routeSeikyo);
@@ -1059,5 +1061,6 @@
 </script>
 </body>
 </html>
+
 
 
